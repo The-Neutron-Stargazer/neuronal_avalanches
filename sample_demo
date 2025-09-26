@@ -1,0 +1,65 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.animation import FuncAnimation
+from scipy.signal import convolve2d
+
+size = 50
+frame_rate = 200
+
+# sigma = 1.0  # Critical / Healthy
+# sigma = 0.8  # Subcritical / dying
+sigma = 1.25 # supercritical/ pathological
+
+RESTING = 0
+FIRING = 1
+REFRACTORY = 2
+REFRACTORY_PERIOD = 2 # need to research more on these values?
+
+def grid_setup(grid_size):
+    grid = np.zeros((grid_size, grid_size), dtype=int)
+    refractory_timers = np.zeros_like(grid)
+    return grid, refractory_timers
+
+# to animate + update
+def update_func(frame, grid, refractory_timers, im):
+
+    firing_neurons = (grid == FIRING)
+
+    grid[firing_neurons] = REFRACTORY
+    refractory_timers[firing_neurons] = REFRACTORY_PERIOD
+
+    kernel = np.array([[1, 1, 1],
+                       [1, 0, 1],
+                       [1, 1, 1]])
+    firing_neighbors = convolve2d(firing_neurons, kernel, mode='same', boundary='wrap') # substitute with brian2
+
+    #    P_fire = 1 - (1 - P_single_neuron)^k  ~ sigma * k / N_neighbors
+    prob_to_fire = (sigma / 8) * firing_neighbors # purely for normalization
+
+    random_triggers = np.random.rand(*grid.shape)
+    newly_firing = (grid == RESTING) & (random_triggers < prob_to_fire)
+    grid[newly_firing] = FIRING
+
+    is_refractory = (refractory_timers > 0)
+    refractory_timers[is_refractory] -= 1
+    grid[(refractory_timers == 0) & (grid == REFRACTORY)] = RESTING
+
+    if not np.any(grid == FIRING):
+        grid[np.random.randint(size), np.random.randint(size)] = FIRING
+
+    im.set_array(grid)
+    im.set_cmap('hot')
+    return [im]
+
+grid, refractory_timers = grid_setup(size)
+
+fig, ax = plt.subplots(figsize=(8, 8))
+im = ax.imshow(grid, vmin=0, vmax=2)
+ax.set_xticks([])
+ax.set_yticks([])
+
+ani = FuncAnimation(fig, update_func, frames=frame_rate,
+                    fargs=(grid, refractory_timers, im),
+                    interval=50, blit=True)
+
+plt.show()
